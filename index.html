@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Seedance → Anime Pilot (Free Prototype)</title>
+  <style>
+    :root{--bg:#071032;--card:rgba(255,255,255,0.03);--accent:#7c3aed;--muted:#8aa}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#0f172a,var(--bg));color:#e6eef8}
+    .wrap{max-width:920px;margin:12px auto;padding:12px}
+    .card{background:var(--card);padding:12px;border-radius:12px;margin-bottom:12px;box-shadow:0 1px 0 rgba(255,255,255,0.02) inset}
+    h1{margin:0 0 8px 0;font-size:20px}
+    label{display:block;font-size:13px;margin:8px 0 4px}
+    textarea,input,button,select{width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+    button{background:var(--accent);border:none;padding:10px;font-weight:600;margin-top:8px;color:white}
+    .row{display:flex;gap:8px}
+    .row > *{flex:1}
+    .small{font-size:13px;color:#bcd;margin-top:6px}
+    .muted{color:var(--muted)}
+    canvas{display:block;border-radius:8px;width:100%;max-width:720px;background:#061026}
+    .thumbs{display:flex;gap:8px;margin-top:8px}
+    .thumbs img{height:56px;border-radius:8px;object-fit:cover}
+    .episodes button{display:block;width:100%;text-align:left;padding:10px;margin-top:8px;background:transparent;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+    .progress{margin-top:8px;font-size:14px}
+    .mutedSmall{font-size:12px;color:#99b}
+    footer{margin-top:12px;font-size:12px;color:#8aa}
+    a.link{color:#9fe;text-decoration:underline}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Seedance → Anime Pilot (Free Prototype)</h1>
+      <div class="small muted">Create a short pilot from a seed. No servers, no paid APIs — runs entirely in your browser.</div>
+
+      <label for="seed">Enter your seed / idea</label>
+      <textarea id="seed" rows="3" placeholder="e.g. Neon samurai girl in a floating city — dramatic, bittersweet"></textarea>
+
+      <div class="row" style="margin-top:10px">
+        <button id="generate">Generate Series</button>
+        <button id="clear">Clear</button>
+      </div>
+      <div id="hint" class="small mutedSmall">Tip: Use short clear seeds: character + setting + mood.</div>
+    </div>
+
+    <div id="seriesArea"></div>
+
+    <div class="card" id="playerCard" style="display:none">
+      <h1>Episode Preview & Export</h1>
+      <div class="small">Upload up to 3 images to represent characters/scenes (optional). If none, placeholders are used.</div>
+
+      <div id="uploadInputs" style="margin-top:10px"></div>
+
+      <label>Shot length (seconds)</label>
+      <input id="shotLength" type="number" min="1" value="3" />
+
+      <div style="margin-top:8px">
+        <button id="generateVideo">Generate Pilot Video</button>
+      </div>
+
+      <div class="progress" id="progress"></div>
+      <div style="margin-top:10px">
+        <canvas id="stage" width="720" height="720"></canvas>
+      </div>
+
+      <div id="result" style="margin-top:10px"></div>
+      <div class="small mutedSmall" style="margin-top:8px">If export fails on iOS Safari, try Chrome on Android or desktop Chrome/Firefox.</div>
+    </div>
+
+    <footer>
+      Prototype created to demonstrate flow. Later we can plug Firebase and real generation APIs. Need help publishing? I’ll guide you.
+    </footer>
+  </div>
+
+<script>
+/* ---------- Local series generator (no LLM) ---------- */
+function generateSeriesFromSeed(seed){
+  seed = (seed||'').trim() || 'Mysterious teen hero in neon city';
+  const title = seed.split(/\s+/).slice(0,4).join(' ') + ' — Mini Series';
+  const style = 'Anime, cel-shaded, neon palette, dramatic lighting';
+  const main = { name: 'Protagonist', desc: seed };
+  const side = { name: 'Ally', desc: 'Loyal companion' };
+  const episodes = [
+    { id:1, title:'Pilot', outline: `Intro to ${main.name} and the neon city.`, shots: makeShots(seed,1) },
+    { id:2, title:'Rising', outline: `Conflict and a betrayal.`, shots: makeShots(seed,2) },
+    { id:3, title:'Showdown', outline: `Climax and bittersweet end.`, shots: makeShots(seed,3) },
+  ];
+  return { title, style, characters:[main,side], episodes };
+}
+function makeShots(seed, ep){
+  const base = [
+    `Close-up of protagonist — emotion: determined`,
+    `3/4 view with neon city background`,
+    `Action shot: sword/energy, motion blur`
+  ];
+  return base.map((t,i)=>({ id: i, desc: t + ` (ep${ep})`, duration: 3 }));
+}
+
+/* ---------- UI and state ---------- */
+const seedEl = document.getElementById('seed');
+const generateBtn = document.getElementById('generate');
+const clearBtn = document.getElementById('clear');
+const seriesArea = document.getElementById('seriesArea');
+const playerCard = document.getElementById('playerCard');
+const uploadInputs = document.getElementById('uploadInputs');
+const generateVideoBtn = document.getElementById('generateVideo');
+const stage = document.getElementById('stage');
+const progress = document.getElementById('progress');
+const result = document.getElementById('result');
+const shotLengthEl = document.getElementById('shotLength');
+
+let currentSeries = null;
+let currentEpisode = null;
+let uploadedImages = {}; // {0: Image, 1: Image, 2: Image}
+
+generateBtn.addEventListener('click', ()=>{
+  currentSeries = generateSeriesFromSeed(seedEl.value);
+  showSeries(currentSeries);
+});
+
+clearBtn.addEventListener('click', ()=>{
+  seedEl.value = '';
+  seriesArea.innerHTML = '';
+  playerCard.style.display = 'none';
+  uploadedImages = {};
+});
+
+/* show series in UI */
+function showSeries(series){
+  seriesArea.innerHTML = '';
+  const c = document.createElement('div'); c.className='card';
+  c.innerHTML = `<h2>${escapeHtml(series.title)}</h2>
+    <div class="small">Style: ${escapeHtml(series.style)}</div>
+    <div style="margin-top:8px"><strong>Characters</strong></div>
+    <ul>${series.characters.map(ch=>`<li class="small">${escapeHtml(ch.name)} — ${escapeHtml(ch.desc)}</li>`).join('')}</ul>
+    <div style="margin-top:8px"><strong>Episodes</strong></div>
+    <div class="episodes"></div>`;
+  seriesArea.appendChild(c);
+  const epsDiv = c.querySelector('.episodes');
+  series.episodes.forEach(ep=>{
+    const btn = document.createElement('button');
+    btn.textContent = `${ep.title} — ${ep.outline}`;
+    btn.addEventListener('click', ()=> openEpisode(ep));
+    epsDiv.appendChild(btn);
+  });
+}
+
+/* open episode UI and build upload inputs */
+function openEpisode(ep){
+  currentEpisode = ep;
+  playerCard.style.display = 'block';
+  uploadInputs.innerHTML = '';
+  uploadedImages = {};
+  // create up to 3 upload slots
+  for(let i=0;i<3;i++){
+    const slot = document.createElement('div');
+    slot.className='card';
+    slot.style.marginBottom='8px';
+    slot.innerHTML = `<div style="display:flex;gap:8px;align-items:center">
+      <div style="flex:1">
+        <div class="small">Image slot ${i+1} — optional (character/scene)</div>
+        <input type="file" accept="image/*" id="file_${i}">
+      </div>
+      <div id="thumb_${i}"></div>
+    </div>`;
+    uploadInputs.appendChild(slot);
+    const input = slot.querySelector('input[type=file]');
+    input.addEventListener('change', (ev)=> handleFileChange(i, ev.target.files));
+  }
+  // show shots summary
+  const shotsDiv = document.createElement('div');
+  shotsDiv.style.marginTop='8px';
+  shotsDiv.innerHTML = `<strong>Shots for this episode</strong>
+    <ol>${ep.shots.map(s=>`<li class="small">${escapeHtml(s.desc)} — ${s.duration}s</li>`).join('')}</ol>`;
+  uploadInputs.appendChild(shotsDiv);
+}
+
+/* read file into Image */
+function handleFileChange(slot, files){
+  if(!files || files.length===0) return;
+  const f = files[0];
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const img = new Image();
+    img.onload = ()=> {
+      uploadedImages[slot] = img;
+      const thumb = document.getElementById('thumb_'+slot);
+      thumb.innerHTML = '';
+      const t = document.createElement('img'); t.src = e.target.result; t.alt='thumb';
+      thumb.appendChild(t);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(f);
+}
+
+/* ---------- Animation & recording ---------- */
+generateVideoBtn.addEventListener('click', async ()=>{
+  if(!currentEpisode){ alert('Choose an episode first'); return; }
+  const shotLenOverride = parseFloat(shotLengthEl.value) || 3;
+  // build shots array with durations (override)
+  const shots = currentEpisode.shots.map(s=> ({...s, duration: shotLenOverride}));
+  // start recording canvas
+  result.innerHTML = ''; progress.textContent = 'Preparing...';
+  try{
+    const blob = await renderAndRecord(shots);
+    // create preview + download
+    const url = URL.createObjectURL(blob);
+    result.innerHTML = `<video controls playsinline style="width:100%;max-width:720px;border-radius:8px"><source src="${url}" type="${blob.type}">Your browser cannot play this video.</video>
+      <div style="margin-top:8px"><a class="link" href="${url}" download="pilot.webm">Download video (webm)</a></div>`;
+    progress.textContent = 'Done — preview below';
+  } catch(err){
+    console.error(err);
+    progress.textContent = 'Failed: ' + (err && err.message ? err.message : String(err));
+  }
+});
+
+/* render animation to canvas while recording via MediaRecorder */
+function renderAndRecord(shots){
+  return new Promise((resolve, reject)=>{
+    const canvas = stage;
+    const ctx = canvas.getContext('2d');
+    // check captureStream support
+    const stream = canvas.captureStream ? canvas.captureStream(30) : null;
+    if(!stream){
+      reject(new Error('Your browser does not support canvas.captureStream() — try Chrome on Android or desktop Chrome/Firefox.'));
+      return;
+    }
+    let mime = 'video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mime)) {
+      mime = 'video/webm;codecs=vp8';
+      if(!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+    }
+    const recorder = new MediaRecorder(stream, { mimeType: mime });
+    const chunks = [];
+    recorder.ondataavailable = (e)=> { if(e.data && e.data.size) chunks.push(e.data); };
+    recorder.onerror = (e)=> { recorder.stop(); reject(e.error || new Error('Recording error')); };
+    recorder.onstop = ()=> {
+      const blob = new Blob(chunks, { type: mime });
+      resolve(blob);
+    };
+
+    // animation parameters
+    const fps = 30;
+    let shotIndex = 0;
+    let running = true;
+
+    recorder.start();
+    progress.textContent = 'Recording...';
+
+    // main loop per shot
+    (async function playShots(){
+      for(const shot of shots){
+        if(!running) break;
+        progress.textContent = `Recording shot ${shotIndex+1} / ${shots.length} — ${shot.desc}`;
+        await playSingleShot(ctx, canvas, shot, shot.duration, fps, shotIndex);
+        shotIndex++;
+      }
+      // small fade out then stop
+      await fadeOut(ctx, canvas, 0.4, fps);
+      recorder.stop();
+      running = false;
+    })().catch(err=>{
+      running = false;
+      try{ recorder.stop(); }catch(e){}
+      reject(err);
+    });
+  });
+}
+
+/* single shot: draw one image or placeholder with pan/zoom and overlay text */
+function playSingleShot(ctx, canvas, shot, durationSec, fps, slotIndex){
+  return new Promise((resolve)=>{
+    const frameCount = Math.max(1, Math.round(durationSec * fps));
+    // choose image for this shot: rotate uploaded images or placeholder
+    const img = uploadedImages[slotIndex] || uploadedImages[slotIndex % 3] || uploadedImages[0] || null;
+    // animation parameters: gentle zoom-in and slow pan
+    const startScale = 1.05;
+    const endScale = 1.18;
+    const startOffset = { x: 0.0, y: 0.0};
+    const endOffset = { x: -0.06, y: -0.03 }; // small pan
+    let frame = 0;
+
+    const drawFrame = ()=>{
+      const t = frame / (frameCount-1 || 1);
+      const ease = easeInOut(t);
+      // background fill
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      if(img){
+        // compute scaled draw
+        const cw = canvas.width, ch = canvas.height;
+        // preserve aspect fill (cover)
+        const imgRatio = img.width / img.height;
+        const canvasRatio = cw / ch;
+        let drawW = cw, drawH = ch;
+        if(imgRatio > canvasRatio){
+          // image wider -> full height, crop width
+          drawH = ch;
+          drawW = img.width * (ch / img.height);
+        } else {
+          drawW = cw;
+          drawH = img.height * (cw / img.width);
+        }
+        // apply zoom
+        const scale = startScale + (endScale - startScale) * ease;
+        const w = drawW * scale;
+        const h = drawH * scale;
+        // compute pan offset
+        const ox = (startOffset.x + (endOffset.x - startOffset.x) * ease) * cw;
+        const oy = (startOffset.y + (endOffset.y - startOffset.y) * ease) * ch;
+        // center image and apply pan
+        const dx = (cw - w) / 2 + ox;
+        const dy = (ch - h) / 2 + oy;
+        ctx.drawImage(img, dx, dy, w, h);
+      } else {
+        // placeholder gradient + noisy shapes
+        const g = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
+        g.addColorStop(0, '#0d1730'); g.addColorStop(1, '#2b0b3a');
+        ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
+        // decorative neon ellipse
+        ctx.save(); ctx.globalAlpha = 0.12;
+        ctx.fillStyle = '#9c4bff';
+        ctx.beginPath(); ctx.ellipse(canvas.width*0.3, canvas.height*0.4, canvas.width*0.5*(0.8+0.2*ease), canvas.height*0.35, 0,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+      // overlay vignette / grain subtle
+      drawVignette(ctx, canvas);
+
+      // overlay shot text box
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.36)';
+      const pad = 14;
+      ctx.font = '20px system-ui, Arial';
+      const text = shot.desc;
+      const textWidth = Math.min(canvas.width - pad*2, ctx.measureText(text).width);
+      const boxH = 60;
+      const boxW = canvas.width - pad*2;
+      ctx.fillRect(pad, canvas.height - boxH - 20, boxW, boxH);
+      ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.95;
+      ctx.fillText(text, pad+12, canvas.height - 20 - (boxH/2 - 8));
+      ctx.restore();
+
+      frame++;
+      if(frame < frameCount){
+        requestAnimationFrame(drawFrame);
+      } else {
+        resolve();
+      }
+    };
+    drawFrame();
+  });
+}
+
+/* small helpers */
+function drawVignette(ctx, canvas){
+  const w = canvas.width, h = canvas.height;
+  const grad = ctx.createRadialGradient(w/2,h/2, w*0.2, w/2,h/2, Math.max(w,h));
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.38)');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,w,h);
+}
+
+function fadeOut(ctx, canvas, seconds, fps){
+  return new Promise((res)=>{
+    const frames = Math.round(seconds * fps);
+    let i=0;
+    const step = ()=>{
+      const a = i/Math.max(1,frames-1);
+      ctx.save();
+      ctx.fillStyle = `rgba(0,0,0,${a})`;
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.restore();
+      i++;
+      if(i<=frames) requestAnimationFrame(step);
+      else res();
+    };
+    step();
+  });
+}
+
+function easeInOut(t){ return t<0.5 ? 2*t*t : -1 + (4-2*t)*t; }
+
+/* ---------- small utilities ---------- */
+function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* initial placeholder demo on load */
+document.addEventListener('DOMContentLoaded', ()=>{
+  seedEl.value = 'Neon samurai girl in a floating city — dramatic, bittersweet';
+  // optionally auto-generate to show UI: comment the next line if you prefer blank start
+  // generateBtn.click();
+});
+</script>
+</body>
+</html>
