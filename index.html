@@ -3,13 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Seedance → Anime Pilot (Talking AI Prototype)</title>
+  <title>Coo — Create Your Show</title>
   <style>
     :root{--bg:#071032;--card:rgba(255,255,255,0.03);--accent:#7c3aed;--muted:#8aa}
     html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#0f172a,var(--bg));color:#e6eef8}
     .wrap{max-width:920px;margin:12px auto;padding:12px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 0}
+    .logo{font-weight:800;font-size:20px;letter-spacing:1px}
     .card{background:var(--card);padding:12px;border-radius:12px;margin-bottom:12px;box-shadow:0 1px 0 rgba(255,255,255,0.02) inset}
-    h1{margin:0 0 8px 0;font-size:20px}
+    h1{margin:0 0 8px 0;font-size:28px}
     label{display:block;font-size:13px;margin:8px 0 4px}
     textarea,input,button,select{width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
     button{background:var(--accent);border:none;padding:10px;font-weight:600;margin-top:8px;color:white}
@@ -24,18 +26,27 @@
     .progress{margin-top:8px;font-size:14px}
     .mutedSmall{font-size:12px;color:#99b}
     footer{margin-top:12px;font-size:12px;color:#8aa}
-    .chat{max-height:300px;overflow:auto;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);margin-top:8px}
+    .chat{max-height:340px;overflow:auto;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);margin-top:8px}
     .msg{padding:8px;border-radius:8px;margin-bottom:6px}
     .bot{background:rgba(124,58,237,0.12)}
     .user{background:rgba(255,255,255,0.03);text-align:right}
     .controls{display:flex;gap:8px;margin-top:8px}
+    .meta{font-size:13px;color:#9db;margin-top:6px}
   </style>
 </head>
 <body>
   <div class="wrap">
+    <div class="topbar">
+      <div class="logo">Coo</div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <button style="padding:8px;border-radius:12px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:inherit">?</button>
+        <button style="padding:8px 12px;border-radius:20px;background:rgba(255,255,255,0.06);border:none;color:inherit">Login</button>
+      </div>
+    </div>
+
     <div class="card">
-      <h1>Seedance → Anime Pilot (Talking AI Prototype)</h1>
-      <div class="small muted">Now with a chat-style assistant and browser TTS for preview (export will be video-only).</div>
+      <h1>Create your show</h1>
+      <div class="small muted">Use the chat assistant to refine your idea and generate an episode-style prompt for video creation.</div>
 
       <label for="seed">Enter your seed / idea</label>
       <textarea id="seed" rows="3" placeholder="e.g. Neon samurai girl in a floating city — dramatic, bittersweet"></textarea>
@@ -44,7 +55,7 @@
         <button id="generate">Start Chat Assistant</button>
         <button id="clear">Clear</button>
       </div>
-      <div id="hint" class="small mutedSmall">Tip: Use short clear seeds: character + setting + mood.</div>
+      <div id="hint" class="small mutedSmall">Tip: Keep seeds short: character + setting + mood. The assistant will ask about episodes, style and voice.</div>
     </div>
 
     <div id="seriesArea"></div>
@@ -68,7 +79,7 @@
       </div>
 
       <div id="result" style="margin-top:10px"></div>
-      <div class="small mutedSmall" style="margin-top:8px">Preview uses browser SpeechSynthesis for voice; exported WebM currently contains video only. We'll add server-side audio merge later.</div>
+      <div class="small mutedSmall" style="margin-top:8px">Preview uses browser SpeechSynthesis for voice; exported WebM contains video only. Server-side audio merge can be added later.</div>
     </div>
 
     <div class="card" id="chatCard" style="display:none">
@@ -78,7 +89,7 @@
         <input id="chatInput" placeholder="Reply or type 'ready' to finish" />
         <button id="sendChat">Send</button>
       </div>
-      <div class="small mutedSmall">This assistant asks a few brief clarifying questions to improve the generated pilot.</div>
+      <div class="small mutedSmall">The assistant will ask how many episodes, the tone, style and voice. It then creates episode prompts you can use to generate per-episode video.</div>
     </div>
 
     <footer>
@@ -88,24 +99,25 @@
 
 <script>
 /* ---------- Local series generator (no LLM) ---------- */
-function generateSeriesFromSeed(seed){
+function generateSeriesFromSeed(seed, meta){
   seed = (seed||'').trim() || 'Mysterious teen hero in neon city';
+  const episodesCount = parseInt(meta.episodes) || 3;
   const title = seed.split(/\s+/).slice(0,4).join(' ') + ' — Mini Series';
-  const style = 'Anime, cel-shaded, neon palette, dramatic lighting';
+  const style = meta.genre || 'Anime, cel-shaded, neon palette';
   const main = { name: 'Protagonist', desc: seed };
   const side = { name: 'Ally', desc: 'Loyal companion' };
-  const episodes = [
-    { id:1, title:'Pilot', outline: `Intro to ${main.name} and the neon city.`, shots: makeShots(seed,1) },
-    { id:2, title:'Rising', outline: `Conflict and a betrayal.`, shots: makeShots(seed,2) },
-    { id:3, title:'Showdown', outline: `Climax and bittersweet end.`, shots: makeShots(seed,3) },
-  ];
-  return { title, style, characters:[main,side], episodes, meta: {} };
+  const episodes = [];
+  for(let e=1;e<=episodesCount;e++){
+    episodes.push({ id:e, title:`Episode ${e}`, outline:`Short outline for episode ${e} in ${style}.`, shots: makeShots(seed,e,meta) });
+  }
+  return { title, style, characters:[main,side], episodes, meta };
 }
-function makeShots(seed, ep){
+function makeShots(seed, ep, meta){
+  const tone = meta.tone || 'dramatic';
   const base = [
-    `Close-up of protagonist — emotion: determined`,
-    `3/4 view with neon city background`,
-    `Action shot: sword/energy, motion blur`
+    `Close-up of protagonist — emotion: ${tone}`,
+    `3/4 view with ${meta.genre || 'neon city'} background`,
+    `Action/beat shot: dynamic motion, cinematic framing`
   ];
   return base.map((t,i)=>({ id: i, desc: t + ` (ep${ep})`, duration: 3 }));
 }
@@ -132,22 +144,22 @@ let currentSeries = null;
 let currentEpisode = null;
 let uploadedImages = {}; // {0: Image, 1: Image, 2: Image}
 
-/* Chat script (simple rule-based assistant for now) */
+/* Chat script: ask episodes, tone, genre, voice */
 const assistantQuestions = [
+  { id:'episodes', text: 'How many short episodes do you want? (1-6) — type a number' },
   { id:'tone', text: 'Do you want the tone to be serious, comedic, or dramatic? (type one)' },
   { id:'genre', text: 'Choose a visual style: chibi, classic anime, or cinematic? (type one)' },
-  { id:'voice', text: 'Do you want a male/female/robotic voice for the character? (type one)' }
+  { id:'voice', text: 'Do you want a male/female/robotic voice for characters? (type one)' }
 ];
 let questionIndex = 0;
 
 generateBtn.addEventListener('click', ()=>{
-  currentSeries = generateSeriesFromSeed(seedEl.value);
   // start chat assistant
   questionIndex = 0;
   chatLog.innerHTML = '';
   chatCard.style.display = 'block';
-  appendBotMessage(`Hi — I will ask a few quick questions to refine your pilot. First: ${assistantQuestions[0].text}`);
-  speakText(`Hi, I will ask a few quick questions to refine your pilot. ${assistantQuestions[0].text}`);
+  appendBotMessage(`Hi — I will ask a few quick questions to refine your series. First: ${assistantQuestions[0].text}`);
+  speakText(`Hi, I will ask a few quick questions to refine your series. ${assistantQuestions[0].text}`);
 });
 
 clearBtn.addEventListener('click', ()=>{
@@ -169,6 +181,7 @@ function handleUserReply(){
   // store answer
   if(questionIndex < assistantQuestions.length){
     const key = assistantQuestions[questionIndex].id;
+    if(!currentSeries) currentSeries = { meta: {} };
     currentSeries.meta[key] = text;
     questionIndex++;
     if(questionIndex < assistantQuestions.length){
@@ -176,9 +189,11 @@ function handleUserReply(){
       appendBotMessage(q);
       speakText(q);
     } else {
-      // finished questions
-      appendBotMessage('Great — building episodes now. Tap an episode to preview or generate the pilot.');
-      speakText('Great. Building episodes now. Tap an episode to preview or generate the pilot.');
+      // finished questions -> generate series using meta and seed
+      const seed = seedEl.value;
+      currentSeries = generateSeriesFromSeed(seed, currentSeries.meta);
+      appendBotMessage('Great — I created a short series outline. Tap an episode to preview or generate its video prompt.');
+      speakText('Great — I created a short series outline. Tap an episode to preview or generate its video prompt.');
       chatCard.style.display = 'none';
       showSeries(currentSeries);
     }
@@ -197,7 +212,7 @@ function showSeries(series){
   seriesArea.innerHTML = '';
   const c = document.createElement('div'); c.className='card';
   c.innerHTML = `<h2>${escapeHtml(series.title)}</h2>
-    <div class="small">Style: ${escapeHtml(series.style)}</div>
+    <div class="meta">Style: ${escapeHtml(series.style)} • Episodes: ${escapeHtml(series.episodes.length)}</div>
     <div style="margin-top:8px"><strong>Characters</strong></div>
     <ul>${series.characters.map(ch=>`<li class="small">${escapeHtml(ch.name)} — ${escapeHtml(ch.desc)}</li>`).join('')}</ul>
     <div style="margin-top:8px"><strong>Episodes</strong></div>
@@ -234,12 +249,22 @@ function openEpisode(ep){
     const input = slot.querySelector('input[type=file]');
     input.addEventListener('change', (ev)=> handleFileChange(i, ev.target.files));
   }
-  // show shots summary
+  // show shots summary and expose a per-episode prompt button
   const shotsDiv = document.createElement('div');
   shotsDiv.style.marginTop='8px';
   shotsDiv.innerHTML = `<strong>Shots for this episode</strong>
-    <ol>${ep.shots.map(s=>`<li class="small">${escapeHtml(s.desc)} — ${s.duration}s</li>`).join('')}</ol>`;
+    <ol>${ep.shots.map(s=>`<li class="small">${escapeHtml(s.desc)} — ${s.duration}s</li>`).join('')}</ol>
+    <div style="margin-top:8px"><button id="showPrompt" style="background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px;border-radius:8px">Show Episode Prompt</button></div>`;
   uploadInputs.appendChild(shotsDiv);
+  // wire show prompt
+  setTimeout(()=>{
+    const sp = document.getElementById('showPrompt');
+    if(sp) sp.addEventListener('click', ()=>{
+      // create a per-episode prompt JSON that could be sent to a generator
+      const prompt = buildEpisodePrompt(ep, currentSeries.meta);
+      alert('Episode Prompt:\n\n' + JSON.stringify(prompt, null, 2));
+    });
+  },100);
 }
 
 /* read file into Image */
@@ -261,16 +286,30 @@ function handleFileChange(slot, files){
   reader.readAsDataURL(f);
 }
 
+/* build a per-episode prompt object for video generation */
+function buildEpisodePrompt(ep, meta){
+  return {
+    title: ep.title,
+    outline: ep.outline,
+    shots: ep.shots.map((s,i)=>({
+      prompt: `${meta.genre || 'anime'} style ${meta.tone || ''} — ${s.desc}`,
+      negative_prompt: 'blur, watermark, lowres',
+      duration: s.duration,
+      seed: 1000 + i
+    })),
+    voice: meta.voice || 'female',
+    aspect: '16:9'
+  };
+}
+
 /* ---------- TTS helper (browser SpeechSynthesis) ---------- */
 function speakText(text){
   return new Promise((resolve)=>{
     if(!('speechSynthesis' in window)) return resolve();
     const utter = new SpeechSynthesisUtterance(text);
-    // simple voice selection based on meta
     const meta = currentSeries && currentSeries.meta && currentSeries.meta.voice;
     if(meta){
       const voices = window.speechSynthesis.getVoices();
-      // choose a voice hint: male/female/robotic
       let match = voices.find(v=> v.name.toLowerCase().includes('female')) || voices[0];
       if(meta.toLowerCase().includes('male')) match = voices.find(v=> v.name.toLowerCase().includes('male')) || match;
       utter.voice = match;
@@ -285,24 +324,20 @@ function speakText(text){
 generateVideoBtn.addEventListener('click', async ()=>{
   if(!currentEpisode){ alert('Choose an episode first'); return; }
   const shotLenOverride = parseFloat(shotLengthEl.value) || 3;
-  // build shots array with durations (override)
   const shots = currentEpisode.shots.map(s=> ({...s, duration: shotLenOverride}));
-  // start recording canvas
   result.innerHTML = ''; progress.textContent = 'Preparing...';
   try{
     const blob = await renderAndRecord(shots);
-    // create preview + download
     const url = URL.createObjectURL(blob);
     result.innerHTML = `<video controls playsinline style="width:100%;max-width:720px;border-radius:8px"><source src="${url}" type="${blob.type}">Your browser cannot play this video.</video>
       <div style="margin-top:8px"><a class="link" href="${url}" download="pilot.webm">Download video (webm)</a></div>`;
-    progress.textContent = 'Done — preview below (note: preview playback will also play TTS separately)';
+    progress.textContent = 'Done — preview below (TTS plays separately in your browser)';
   } catch(err){
     console.error(err);
     progress.textContent = 'Failed: ' + (err && err.message ? err.message : String(err));
   }
 });
 
-/* render animation to canvas while recording via MediaRecorder */
 function renderAndRecord(shots){
   return new Promise((resolve, reject)=>{
     const canvas = stage;
@@ -321,90 +356,30 @@ function renderAndRecord(shots){
     const chunks = [];
     recorder.ondataavailable = (e)=> { if(e.data && e.data.size) chunks.push(e.data); };
     recorder.onerror = (e)=> { recorder.stop(); reject(e.error || new Error('Recording error')); };
-    recorder.onstop = ()=> {
-      const blob = new Blob(chunks, { type: mime });
-      resolve(blob);
-    };
+    recorder.onstop = ()=> { const blob = new Blob(chunks, { type: mime }); resolve(blob); };
 
-    // animation parameters
-    const fps = 30;
-    let shotIndex = 0;
-    let running = true;
-
-    recorder.start();
-    progress.textContent = 'Recording...';
-
-    // main loop per shot
+    const fps = 30; let shotIndex = 0; let running = true;
+    recorder.start(); progress.textContent = 'Recording...';
     (async function playShots(){
-      for(const shot of shots){
-        if(!running) break;
-        progress.textContent = `Recording shot ${shotIndex+1} / ${shots.length} — ${shot.desc}`;
-        // play TTS and animation concurrently for preview experience
-        await playSingleShot(ctx, canvas, shot, shot.duration, fps, shotIndex);
-        shotIndex++;
-      }
-      // small fade out then stop
-      await fadeOut(ctx, canvas, 0.4, fps);
-      recorder.stop();
-      running = false;
-    })().catch(err=>{
-      running = false;
-      try{ recorder.stop(); }catch(e){}
-      reject(err);
-    });
+      for(const shot of shots){ if(!running) break; progress.textContent = `Recording shot ${shotIndex+1} / ${shots.length} — ${shot.desc}`; await playSingleShot(ctx, canvas, shot, shot.duration, fps, shotIndex); shotIndex++; }
+      await fadeOut(ctx, canvas, 0.4, fps); recorder.stop(); running = false;
+    })().catch(err=>{ running = false; try{ recorder.stop(); }catch(e){} reject(err); });
   });
 }
 
-/* single shot: draw one image or placeholder with pan/zoom and overlay text */
 function playSingleShot(ctx, canvas, shot, durationSec, fps, slotIndex){
   return new Promise((resolve)=>{
     const frameCount = Math.max(1, Math.round(durationSec * fps));
     const img = uploadedImages[slotIndex] || uploadedImages[slotIndex % 3] || uploadedImages[0] || null;
-    const startScale = 1.05;
-    const endScale = 1.18;
-    const startOffset = { x: 0.0, y: 0.0};
-    const endOffset = { x: -0.06, y: -0.03 };
-    let frame = 0;
-
-    // start TTS for preview (may not be recorded into export)
-    const ttsPromise = speakText(shot.desc);
-
-    const drawFrame = ()=>{
-      const t = frame / (frameCount-1 || 1);
-      const ease = easeInOut(t);
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      if(img){
-        const cw = canvas.width, ch = canvas.height;
-        const imgRatio = img.width / img.height;
-        const canvasRatio = cw / ch;
-        let drawW = cw, drawH = ch;
-        if(imgRatio > canvasRatio){ drawH = ch; drawW = img.width * (ch / img.height); } else { drawW = cw; drawH = img.height * (cw / img.width); }
-        const scale = startScale + (endScale - startScale) * ease;
-        const w = drawW * scale; const h = drawH * scale;
-        const ox = (startOffset.x + (endOffset.x - startOffset.x) * ease) * cw;
-        const oy = (startOffset.y + (endOffset.y - startOffset.y) * ease) * ch;
-        const dx = (cw - w) / 2 + ox; const dy = (ch - h) / 2 + oy;
-        ctx.drawImage(img, dx, dy, w, h);
-      } else {
-        const g = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
-        g.addColorStop(0, '#0d1730'); g.addColorStop(1, '#2b0b3a');
-        ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.save(); ctx.globalAlpha = 0.12; ctx.fillStyle = '#9c4bff';
-        ctx.beginPath(); ctx.ellipse(canvas.width*0.3, canvas.height*0.4, canvas.width*0.5*(0.8+0.2*ease), canvas.height*0.35, 0,0,Math.PI*2); ctx.fill(); ctx.restore();
-      }
-      drawVignette(ctx, canvas);
-      ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.36)'; const pad = 14; ctx.font = '20px system-ui, Arial'; const text = shot.desc; const boxH = 60; const boxW = canvas.width - pad*2; ctx.fillRect(pad, canvas.height - boxH - 20, boxW, boxH); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.95; ctx.fillText(text, pad+12, canvas.height - 20 - (boxH/2 - 8)); ctx.restore();
-      frame++;
-      if(frame < frameCount){ requestAnimationFrame(drawFrame); } else {
-        const tWait = setTimeout(()=> resolve(), 50);
-        ttsPromise.then(()=>{ clearTimeout(tWait); resolve(); }).catch(()=>{ clearTimeout(tWait); resolve(); });
-      }
-    };
+    const startScale = 1.05; const endScale = 1.18; const startOffset = { x:0, y:0}; const endOffset = { x:-0.06, y:-0.03 };
+    let frame = 0; const ttsPromise = speakText(shot.desc);
+    const drawFrame = ()=>{ const t = frame / (frameCount-1 || 1); const ease = easeInOut(t); ctx.clearRect(0,0,canvas.width,canvas.height);
+      if(img){ const cw=canvas.width,ch=canvas.height; const imgRatio = img.width/img.height; const canvasRatio = cw/ch; let drawW=cw, drawH=ch; if(imgRatio>canvasRatio){ drawH=ch; drawW=img.width*(ch/img.height); } else { drawW=cw; drawH=img.height*(cw/img.width); } const scale = startScale + (endScale-startScale)*ease; const w=drawW*scale, h=drawH*scale; const ox=(startOffset.x + (endOffset.x-startOffset.x)*ease)*cw; const oy=(startOffset.y + (endOffset.y-startOffset.y)*ease)*ch; const dx=(cw-w)/2+ox, dy=(ch-h)/2+oy; ctx.drawImage(img, dx, dy, w, h); } else { const g=ctx.createLinearGradient(0,0,canvas.width,canvas.height); g.addColorStop(0,'#0d1730'); g.addColorStop(1,'#2b0b3a'); ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.save(); ctx.globalAlpha=0.12; ctx.fillStyle='#9c4bff'; ctx.beginPath(); ctx.ellipse(canvas.width*0.3, canvas.height*0.4, canvas.width*0.5*(0.8+0.2*ease), canvas.height*0.35,0,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+      drawVignette(ctx, canvas); ctx.save(); ctx.fillStyle='rgba(0,0,0,0.36)'; const pad=14; ctx.font='20px system-ui, Arial'; const text=shot.desc; const boxH=60; const boxW=canvas.width-pad*2; ctx.fillRect(pad, canvas.height-boxH-20, boxW, boxH); ctx.fillStyle='#fff'; ctx.globalAlpha=0.95; ctx.fillText(text, pad+12, canvas.height-20-(boxH/2-8)); ctx.restore(); frame++; if(frame<frameCount){ requestAnimationFrame(drawFrame); } else { const tWait=setTimeout(()=>resolve(),50); ttsPromise.then(()=>{ clearTimeout(tWait); resolve(); }).catch(()=>{ clearTimeout(tWait); resolve(); }); } };
     drawFrame();
   });
 }
 
-/* small helpers */
 function drawVignette(ctx, canvas){ const w=canvas.width,h=canvas.height; const grad=ctx.createRadialGradient(w/2,h/2,w*0.2,w/2,h/2,Math.max(w,h)); grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(1,'rgba(0,0,0,0.38)'); ctx.fillStyle=grad; ctx.fillRect(0,0,w,h); }
 function fadeOut(ctx, canvas, seconds, fps){ return new Promise((res)=>{ const frames=Math.round(seconds*fps); let i=0; const step=()=>{ const a=i/Math.max(1,frames-1); ctx.save(); ctx.fillStyle=`rgba(0,0,0,${a})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); i++; if(i<=frames) requestAnimationFrame(step); else res(); }; step(); }); }
 function easeInOut(t){ return t<0.5 ? 2*t*t : -1 + (4-2*t)*t; }
