@@ -32,6 +32,17 @@
     .user{background:rgba(255,255,255,0.03);text-align:right}
     .controls{display:flex;gap:8px;margin-top:8px}
     .meta{font-size:13px;color:#9db;margin-top:6px}
+
+    /* Floating assistant / bottom bar styles */
+    #cooAssistantWrap{position:fixed;left:12px;right:12px;bottom:96px;z-index:1600;display:flex;justify-content:center;pointer-events:auto}
+    #cooAssistant{width:100%;max-width:820px;border-radius:20px;background:linear-gradient(180deg, rgba(20,24,30,0.75), rgba(12,14,18,0.6));backdrop-filter: blur(10px);box-shadow:0 10px 30px rgba(0,0,0,0.6);overflow:hidden;transform:translateY(28px);transition:transform .32s cubic-bezier(.2,.9,.2,1);max-height:58vh}
+    #cooAssistant.open{transform:translateY(0)}
+    #cooAssistantContent{padding:14px;overflow:auto;height:calc(58vh - 72px)}
+    .cooQuick{transition: background .12s;border-radius:12px;padding:12px;background:rgba(255,255,255,0.02);border:none;color:inherit;text-align:left}
+    .cooQuick:active{background:rgba(255,255,255,0.06)}
+    #cooBottomBar{position:fixed;left:12px;right:12px;bottom:18px;z-index:1650;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    #cooBottomBar button{box-shadow:0 6px 16px rgba(0,0,0,0.5)}
+    #cooAsk{flex:1;text-align:left;padding:16px;border-radius:28px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03);color:inherit}
   </style>
 </head>
 <body>
@@ -95,6 +106,44 @@
     <footer>
       Prototype created to demonstrate flow. Later we can plug Firebase and real generation APIs. Need help publishing? I’ll guide you.
     </footer>
+  </div>
+
+  <!-- Floating assistant (Trimz-like) -->
+  <div id="cooAssistantWrap">
+    <div id="cooAssistant" role="dialog" aria-label="Coo assistant">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,0.03)">
+        <div style="display:flex;gap:10px;align-items:center">
+          <button id="cooPlus" aria-label="Add" style="background:rgba(255,255,255,0.04);border-radius:12px;padding:8px;border:none;color:inherit">+</button>
+          <button id="cooSettings" aria-label="Settings" style="background:transparent;border:none;color:inherit">⚙</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="cooCollapse" aria-label="Collapse" style="background:transparent;border:none;color:inherit;font-size:20px">─</button>
+        </div>
+      </div>
+
+      <div id="cooAssistantContent">
+        <div style="margin-bottom:12px">
+          <div style="background:rgba(255,255,255,0.04);padding:10px;border-radius:12px;display:inline-block">what can you help me with?</div>
+        </div>
+
+        <div id="cooAssistantBody" style="color:#e6eef8;line-height:1.5">
+          <p class="small mutedSmall">I'm your creative partner for building microseries — pick a premise or ask for ideas.</p>
+
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+            <button class="cooQuick" data-text="dark romance / thriller premise">↪ dark romance / thriller premise</button>
+            <button class="cooQuick" data-text="supernatural action premise">↪ supernatural action premise</button>
+            <button class="cooQuick" data-text="i have an idea ready">↪ i have an idea ready</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Persistent bottom Ask bar -->
+  <div id="cooBottomBar">
+    <button id="cooAdd" aria-label="Add" style="width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,0.04);border:none;color:inherit;font-size:24px">+</button>
+    <button id="cooAsk" aria-label="Ask Coo">Ask Coo</button>
+    <button id="cooSend" aria-label="Send" style="width:56px;height:56px;border-radius:16px;background:var(--accent);border:none;color:#fff;font-size:18px">↑</button>
   </div>
 
 <script>
@@ -374,8 +423,8 @@ function playSingleShot(ctx, canvas, shot, durationSec, fps, slotIndex){
     const startScale = 1.05; const endScale = 1.18; const startOffset = { x:0, y:0}; const endOffset = { x:-0.06, y:-0.03 };
     let frame = 0; const ttsPromise = speakText(shot.desc);
     const drawFrame = ()=>{ const t = frame / (frameCount-1 || 1); const ease = easeInOut(t); ctx.clearRect(0,0,canvas.width,canvas.height);
-      if(img){ const cw=canvas.width,ch=canvas.height; const imgRatio = img.width/img.height; const canvasRatio = cw/ch; let drawW=cw, drawH=ch; if(imgRatio>canvasRatio){ drawH=ch; drawW=img.width*(ch/img.height); } else { drawW=cw; drawH=img.height*(cw/img.width); } const scale = startScale + (endScale-startScale)*ease; const w=drawW*scale, h=drawH*scale; const ox=(startOffset.x + (endOffset.x-startOffset.x)*ease)*cw; const oy=(startOffset.y + (endOffset.y-startOffset.y)*ease)*ch; const dx=(cw-w)/2+ox, dy=(ch-h)/2+oy; ctx.drawImage(img, dx, dy, w, h); } else { const g=ctx.createLinearGradient(0,0,canvas.width,canvas.height); g.addColorStop(0,'#0d1730'); g.addColorStop(1,'#2b0b3a'); ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.save(); ctx.globalAlpha=0.12; ctx.fillStyle='#9c4bff'; ctx.beginPath(); ctx.ellipse(canvas.width*0.3, canvas.height*0.4, canvas.width*0.5*(0.8+0.2*ease), canvas.height*0.35,0,0,Math.PI*2); ctx.fill(); ctx.restore(); }
-      drawVignette(ctx, canvas); ctx.save(); ctx.fillStyle='rgba(0,0,0,0.36)'; const pad=14; ctx.font='20px system-ui, Arial'; const text=shot.desc; const boxH=60; const boxW=canvas.width-pad*2; ctx.fillRect(pad, canvas.height-boxH-20, boxW, boxH); ctx.fillStyle='#fff'; ctx.globalAlpha=0.95; ctx.fillText(text, pad+12, canvas.height-20-(boxH/2-8)); ctx.restore(); frame++; if(frame<frameCount){ requestAnimationFrame(drawFrame); } else { const tWait=setTimeout(()=>resolve(),50); ttsPromise.then(()=>{ clearTimeout(tWait); resolve(); }).catch(()=>{ clearTimeout(tWait); resolve(); }); } };
+      if(img){ const cw=canvas.width,ch=canvas.height; const imgRatio = img.width/img.height; const canvasRatio = cw/ch; let drawW=cw, drawH=ch; if(imgRatio>canvasRatio){ drawH=ch; drawW=img.width*(ch/img.height); } else { drawW=cw; drawH=img.height*(cw/img.width); } const scale = startScale + (endScale-startScale)*ease; const w=drawW*scale; const h=drawH*scale; const ox=(startOffset.x + (endOffset.x-startOffset.x)*ease)*cw; const oy=(startOffset.y + (endOffset.y-startOffset.y)*ease)*ch; const dx=(cw-w)/2+ox; const dy=(ch-h)/2+oy; ctx.drawImage(img, dx, dy, w, h); } else { const g = ctx.createLinearGradient(0,0,canvas.width,canvas.height); g.addColorStop(0, '#0d1730'); g.addColorStop(1, '#2b0b3a'); ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.save(); ctx.globalAlpha = 0.12; ctx.fillStyle = '#9c4bff'; ctx.beginPath(); ctx.ellipse(canvas.width*0.3, canvas.height*0.4, canvas.width*0.5*(0.8+0.2*ease), canvas.height*0.35,0,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+      drawVignette(ctx, canvas); ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.36)'; const pad = 14; ctx.font = '20px system-ui, Arial'; const text = shot.desc; const boxH = 60; const boxW = canvas.width - pad*2; ctx.fillRect(pad, canvas.height - boxH - 20, boxW, boxH); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.95; ctx.fillText(text, pad+12, canvas.height - 20 - (boxH/2 - 8)); ctx.restore(); frame++; if(frame < frameCount){ requestAnimationFrame(drawFrame); } else { const tWait = setTimeout(()=> resolve(), 50); ttsPromise.then(()=>{ clearTimeout(tWait); resolve(); }).catch(()=>{ clearTimeout(tWait); resolve(); }); } };
     drawFrame();
   });
 }
@@ -384,6 +433,33 @@ function drawVignette(ctx, canvas){ const w=canvas.width,h=canvas.height; const 
 function fadeOut(ctx, canvas, seconds, fps){ return new Promise((res)=>{ const frames=Math.round(seconds*fps); let i=0; const step=()=>{ const a=i/Math.max(1,frames-1); ctx.save(); ctx.fillStyle=`rgba(0,0,0,${a})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); i++; if(i<=frames) requestAnimationFrame(step); else res(); }; step(); }); }
 function easeInOut(t){ return t<0.5 ? 2*t*t : -1 + (4-2*t)*t; }
 function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- Floating assistant UI wiring ---------- */
+(function(){
+  const assistant = document.getElementById('cooAssistant');
+  const collapseBtn = document.getElementById('cooCollapse');
+  const bottomAsk = document.getElementById('cooAsk');
+  const bottomAdd = document.getElementById('cooAdd');
+  const bottomSend = document.getElementById('cooSend');
+
+  function openAssistant(){ assistant.classList.add('open'); document.body.style.overflow = 'hidden'; }
+  function closeAssistant(){ assistant.classList.remove('open'); document.body.style.overflow = ''; }
+  collapseBtn.addEventListener('click', ()=>{ closeAssistant(); });
+
+  bottomAsk.addEventListener('click', ()=>{ openAssistant(); const chatInputEl = document.getElementById('chatInput'); if(chatInputEl){ chatInputEl.focus(); } });
+  bottomAdd.addEventListener('click', ()=>{ openAssistant(); });
+  bottomSend.addEventListener('click', ()=>{ const chatInputEl = document.getElementById('chatInput'); if(chatInputEl){ const sendBtn = document.getElementById('sendChat'); if(sendBtn) sendBtn.click(); } else { openAssistant(); } });
+
+  const quicks = document.querySelectorAll('.cooQuick');
+  quicks.forEach(b=>{
+    b.addEventListener('click', (ev)=>{
+      const text = b.getAttribute('data-text') || b.textContent || '';
+      const chatInputEl = document.getElementById('chatInput');
+      if(chatInputEl){ chatInputEl.value = text; chatInputEl.focus(); }
+      else { const seedEl = document.getElementById('seed'); if(seedEl){ seedEl.value = text; } }
+    });
+  });
+})();
 
 document.addEventListener('DOMContentLoaded', ()=>{ seedEl.value = 'Neon samurai girl in a floating city — dramatic, bittersweet'; });
 </script>
