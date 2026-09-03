@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Seedance → Anime Pilot (Free Prototype)</title>
+  <title>Seedance → Anime Pilot (Talking AI Prototype)</title>
   <style>
     :root{--bg:#071032;--card:rgba(255,255,255,0.03);--accent:#7c3aed;--muted:#8aa}
     html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#0f172a,var(--bg));color:#e6eef8}
@@ -24,20 +24,24 @@
     .progress{margin-top:8px;font-size:14px}
     .mutedSmall{font-size:12px;color:#99b}
     footer{margin-top:12px;font-size:12px;color:#8aa}
-    a.link{color:#9fe;text-decoration:underline}
+    .chat{max-height:300px;overflow:auto;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);margin-top:8px}
+    .msg{padding:8px;border-radius:8px;margin-bottom:6px}
+    .bot{background:rgba(124,58,237,0.12)}
+    .user{background:rgba(255,255,255,0.03);text-align:right}
+    .controls{display:flex;gap:8px;margin-top:8px}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
-      <h1>Seedance → Anime Pilot (Free Prototype)</h1>
-      <div class="small muted">Create a short pilot from a seed. No servers, no paid APIs — runs entirely in your browser.</div>
+      <h1>Seedance → Anime Pilot (Talking AI Prototype)</h1>
+      <div class="small muted">Now with a chat-style assistant and browser TTS for preview (export will be video-only).</div>
 
       <label for="seed">Enter your seed / idea</label>
       <textarea id="seed" rows="3" placeholder="e.g. Neon samurai girl in a floating city — dramatic, bittersweet"></textarea>
 
       <div class="row" style="margin-top:10px">
-        <button id="generate">Generate Series</button>
+        <button id="generate">Start Chat Assistant</button>
         <button id="clear">Clear</button>
       </div>
       <div id="hint" class="small mutedSmall">Tip: Use short clear seeds: character + setting + mood.</div>
@@ -64,7 +68,17 @@
       </div>
 
       <div id="result" style="margin-top:10px"></div>
-      <div class="small mutedSmall" style="margin-top:8px">If export fails on iOS Safari, try Chrome on Android or desktop Chrome/Firefox.</div>
+      <div class="small mutedSmall" style="margin-top:8px">Preview uses browser SpeechSynthesis for voice; exported WebM currently contains video only. We'll add server-side audio merge later.</div>
+    </div>
+
+    <div class="card" id="chatCard" style="display:none">
+      <h2>Assistant Chat</h2>
+      <div class="chat" id="chatLog"></div>
+      <div class="controls">
+        <input id="chatInput" placeholder="Reply or type 'ready' to finish" />
+        <button id="sendChat">Send</button>
+      </div>
+      <div class="small mutedSmall">This assistant asks a few brief clarifying questions to improve the generated pilot.</div>
     </div>
 
     <footer>
@@ -85,7 +99,7 @@ function generateSeriesFromSeed(seed){
     { id:2, title:'Rising', outline: `Conflict and a betrayal.`, shots: makeShots(seed,2) },
     { id:3, title:'Showdown', outline: `Climax and bittersweet end.`, shots: makeShots(seed,3) },
   ];
-  return { title, style, characters:[main,side], episodes };
+  return { title, style, characters:[main,side], episodes, meta: {} };
 }
 function makeShots(seed, ep){
   const base = [
@@ -109,21 +123,74 @@ const progress = document.getElementById('progress');
 const result = document.getElementById('result');
 const shotLengthEl = document.getElementById('shotLength');
 
+const chatCard = document.getElementById('chatCard');
+const chatLog = document.getElementById('chatLog');
+const chatInput = document.getElementById('chatInput');
+const sendChat = document.getElementById('sendChat');
+
 let currentSeries = null;
 let currentEpisode = null;
 let uploadedImages = {}; // {0: Image, 1: Image, 2: Image}
 
+/* Chat script (simple rule-based assistant for now) */
+const assistantQuestions = [
+  { id:'tone', text: 'Do you want the tone to be serious, comedic, or dramatic? (type one)' },
+  { id:'genre', text: 'Choose a visual style: chibi, classic anime, or cinematic? (type one)' },
+  { id:'voice', text: 'Do you want a male/female/robotic voice for the character? (type one)' }
+];
+let questionIndex = 0;
+
 generateBtn.addEventListener('click', ()=>{
   currentSeries = generateSeriesFromSeed(seedEl.value);
-  showSeries(currentSeries);
+  // start chat assistant
+  questionIndex = 0;
+  chatLog.innerHTML = '';
+  chatCard.style.display = 'block';
+  appendBotMessage(`Hi — I will ask a few quick questions to refine your pilot. First: ${assistantQuestions[0].text}`);
+  speakText(`Hi, I will ask a few quick questions to refine your pilot. ${assistantQuestions[0].text}`);
 });
 
 clearBtn.addEventListener('click', ()=>{
   seedEl.value = '';
   seriesArea.innerHTML = '';
   playerCard.style.display = 'none';
+  chatCard.style.display = 'none';
   uploadedImages = {};
 });
+
+sendChat.addEventListener('click', ()=> handleUserReply());
+chatInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') handleUserReply(); });
+
+function handleUserReply(){
+  const text = (chatInput.value||'').trim();
+  if(!text) return;
+  appendUserMessage(text);
+  chatInput.value = '';
+  // store answer
+  if(questionIndex < assistantQuestions.length){
+    const key = assistantQuestions[questionIndex].id;
+    currentSeries.meta[key] = text;
+    questionIndex++;
+    if(questionIndex < assistantQuestions.length){
+      const q = assistantQuestions[questionIndex].text;
+      appendBotMessage(q);
+      speakText(q);
+    } else {
+      // finished questions
+      appendBotMessage('Great — building episodes now. Tap an episode to preview or generate the pilot.');
+      speakText('Great. Building episodes now. Tap an episode to preview or generate the pilot.');
+      chatCard.style.display = 'none';
+      showSeries(currentSeries);
+    }
+  }
+}
+
+function appendBotMessage(text){
+  const m = document.createElement('div'); m.className='msg bot'; m.textContent = text; chatLog.appendChild(m); chatLog.scrollTop = chatLog.scrollHeight;
+}
+function appendUserMessage(text){
+  const m = document.createElement('div'); m.className='msg user'; m.textContent = text; chatLog.appendChild(m); chatLog.scrollTop = chatLog.scrollHeight;
+}
 
 /* show series in UI */
 function showSeries(series){
@@ -186,12 +253,32 @@ function handleFileChange(slot, files){
       uploadedImages[slot] = img;
       const thumb = document.getElementById('thumb_'+slot);
       thumb.innerHTML = '';
-      const t = document.createElement('img'); t.src = e.target.result; t.alt='thumb';
+      const t = document.createElement('img'); t.src = e.target.result; t.alt='thumb'; t.style.height='56px';
       thumb.appendChild(t);
     };
     img.src = e.target.result;
   };
   reader.readAsDataURL(f);
+}
+
+/* ---------- TTS helper (browser SpeechSynthesis) ---------- */
+function speakText(text){
+  return new Promise((resolve)=>{
+    if(!('speechSynthesis' in window)) return resolve();
+    const utter = new SpeechSynthesisUtterance(text);
+    // simple voice selection based on meta
+    const meta = currentSeries && currentSeries.meta && currentSeries.meta.voice;
+    if(meta){
+      const voices = window.speechSynthesis.getVoices();
+      // choose a voice hint: male/female/robotic
+      let match = voices.find(v=> v.name.toLowerCase().includes('female')) || voices[0];
+      if(meta.toLowerCase().includes('male')) match = voices.find(v=> v.name.toLowerCase().includes('male')) || match;
+      utter.voice = match;
+    }
+    utter.onend = ()=> resolve();
+    utter.onerror = ()=> resolve();
+    window.speechSynthesis.speak(utter);
+  });
 }
 
 /* ---------- Animation & recording ---------- */
@@ -208,7 +295,7 @@ generateVideoBtn.addEventListener('click', async ()=>{
     const url = URL.createObjectURL(blob);
     result.innerHTML = `<video controls playsinline style="width:100%;max-width:720px;border-radius:8px"><source src="${url}" type="${blob.type}">Your browser cannot play this video.</video>
       <div style="margin-top:8px"><a class="link" href="${url}" download="pilot.webm">Download video (webm)</a></div>`;
-    progress.textContent = 'Done — preview below';
+    progress.textContent = 'Done — preview below (note: preview playback will also play TTS separately)';
   } catch(err){
     console.error(err);
     progress.textContent = 'Failed: ' + (err && err.message ? err.message : String(err));
@@ -220,7 +307,6 @@ function renderAndRecord(shots){
   return new Promise((resolve, reject)=>{
     const canvas = stage;
     const ctx = canvas.getContext('2d');
-    // check captureStream support
     const stream = canvas.captureStream ? canvas.captureStream(30) : null;
     if(!stream){
       reject(new Error('Your browser does not support canvas.captureStream() — try Chrome on Android or desktop Chrome/Firefox.'));
@@ -253,6 +339,7 @@ function renderAndRecord(shots){
       for(const shot of shots){
         if(!running) break;
         progress.textContent = `Recording shot ${shotIndex+1} / ${shots.length} — ${shot.desc}`;
+        // play TTS and animation concurrently for preview experience
         await playSingleShot(ctx, canvas, shot, shot.duration, fps, shotIndex);
         shotIndex++;
       }
@@ -272,79 +359,45 @@ function renderAndRecord(shots){
 function playSingleShot(ctx, canvas, shot, durationSec, fps, slotIndex){
   return new Promise((resolve)=>{
     const frameCount = Math.max(1, Math.round(durationSec * fps));
-    // choose image for this shot: rotate uploaded images or placeholder
     const img = uploadedImages[slotIndex] || uploadedImages[slotIndex % 3] || uploadedImages[0] || null;
-    // animation parameters: gentle zoom-in and slow pan
     const startScale = 1.05;
     const endScale = 1.18;
     const startOffset = { x: 0.0, y: 0.0};
-    const endOffset = { x: -0.06, y: -0.03 }; // small pan
+    const endOffset = { x: -0.06, y: -0.03 };
     let frame = 0;
+
+    // start TTS for preview (may not be recorded into export)
+    const ttsPromise = speakText(shot.desc);
 
     const drawFrame = ()=>{
       const t = frame / (frameCount-1 || 1);
       const ease = easeInOut(t);
-      // background fill
       ctx.clearRect(0,0,canvas.width,canvas.height);
       if(img){
-        // compute scaled draw
         const cw = canvas.width, ch = canvas.height;
-        // preserve aspect fill (cover)
         const imgRatio = img.width / img.height;
         const canvasRatio = cw / ch;
         let drawW = cw, drawH = ch;
-        if(imgRatio > canvasRatio){
-          // image wider -> full height, crop width
-          drawH = ch;
-          drawW = img.width * (ch / img.height);
-        } else {
-          drawW = cw;
-          drawH = img.height * (cw / img.width);
-        }
-        // apply zoom
+        if(imgRatio > canvasRatio){ drawH = ch; drawW = img.width * (ch / img.height); } else { drawW = cw; drawH = img.height * (cw / img.width); }
         const scale = startScale + (endScale - startScale) * ease;
-        const w = drawW * scale;
-        const h = drawH * scale;
-        // compute pan offset
+        const w = drawW * scale; const h = drawH * scale;
         const ox = (startOffset.x + (endOffset.x - startOffset.x) * ease) * cw;
         const oy = (startOffset.y + (endOffset.y - startOffset.y) * ease) * ch;
-        // center image and apply pan
-        const dx = (cw - w) / 2 + ox;
-        const dy = (ch - h) / 2 + oy;
+        const dx = (cw - w) / 2 + ox; const dy = (ch - h) / 2 + oy;
         ctx.drawImage(img, dx, dy, w, h);
       } else {
-        // placeholder gradient + noisy shapes
         const g = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
         g.addColorStop(0, '#0d1730'); g.addColorStop(1, '#2b0b3a');
         ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
-        // decorative neon ellipse
-        ctx.save(); ctx.globalAlpha = 0.12;
-        ctx.fillStyle = '#9c4bff';
-        ctx.beginPath(); ctx.ellipse(canvas.width*0.3, canvas.height*0.4, canvas.width*0.5*(0.8+0.2*ease), canvas.height*0.35, 0,0,Math.PI*2); ctx.fill();
-        ctx.restore();
+        ctx.save(); ctx.globalAlpha = 0.12; ctx.fillStyle = '#9c4bff';
+        ctx.beginPath(); ctx.ellipse(canvas.width*0.3, canvas.height*0.4, canvas.width*0.5*(0.8+0.2*ease), canvas.height*0.35, 0,0,Math.PI*2); ctx.fill(); ctx.restore();
       }
-      // overlay vignette / grain subtle
       drawVignette(ctx, canvas);
-
-      // overlay shot text box
-      ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.36)';
-      const pad = 14;
-      ctx.font = '20px system-ui, Arial';
-      const text = shot.desc;
-      const textWidth = Math.min(canvas.width - pad*2, ctx.measureText(text).width);
-      const boxH = 60;
-      const boxW = canvas.width - pad*2;
-      ctx.fillRect(pad, canvas.height - boxH - 20, boxW, boxH);
-      ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.95;
-      ctx.fillText(text, pad+12, canvas.height - 20 - (boxH/2 - 8));
-      ctx.restore();
-
+      ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.36)'; const pad = 14; ctx.font = '20px system-ui, Arial'; const text = shot.desc; const boxH = 60; const boxW = canvas.width - pad*2; ctx.fillRect(pad, canvas.height - boxH - 20, boxW, boxH); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.95; ctx.fillText(text, pad+12, canvas.height - 20 - (boxH/2 - 8)); ctx.restore();
       frame++;
-      if(frame < frameCount){
-        requestAnimationFrame(drawFrame);
-      } else {
-        resolve();
+      if(frame < frameCount){ requestAnimationFrame(drawFrame); } else {
+        const tWait = setTimeout(()=> resolve(), 50);
+        ttsPromise.then(()=>{ clearTimeout(tWait); resolve(); }).catch(()=>{ clearTimeout(tWait); resolve(); });
       }
     };
     drawFrame();
@@ -352,43 +405,12 @@ function playSingleShot(ctx, canvas, shot, durationSec, fps, slotIndex){
 }
 
 /* small helpers */
-function drawVignette(ctx, canvas){
-  const w = canvas.width, h = canvas.height;
-  const grad = ctx.createRadialGradient(w/2,h/2, w*0.2, w/2,h/2, Math.max(w,h));
-  grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(1, 'rgba(0,0,0,0.38)');
-  ctx.fillStyle = grad; ctx.fillRect(0,0,w,h);
-}
-
-function fadeOut(ctx, canvas, seconds, fps){
-  return new Promise((res)=>{
-    const frames = Math.round(seconds * fps);
-    let i=0;
-    const step = ()=>{
-      const a = i/Math.max(1,frames-1);
-      ctx.save();
-      ctx.fillStyle = `rgba(0,0,0,${a})`;
-      ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.restore();
-      i++;
-      if(i<=frames) requestAnimationFrame(step);
-      else res();
-    };
-    step();
-  });
-}
-
+function drawVignette(ctx, canvas){ const w=canvas.width,h=canvas.height; const grad=ctx.createRadialGradient(w/2,h/2,w*0.2,w/2,h/2,Math.max(w,h)); grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(1,'rgba(0,0,0,0.38)'); ctx.fillStyle=grad; ctx.fillRect(0,0,w,h); }
+function fadeOut(ctx, canvas, seconds, fps){ return new Promise((res)=>{ const frames=Math.round(seconds*fps); let i=0; const step=()=>{ const a=i/Math.max(1,frames-1); ctx.save(); ctx.fillStyle=`rgba(0,0,0,${a})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); i++; if(i<=frames) requestAnimationFrame(step); else res(); }; step(); }); }
 function easeInOut(t){ return t<0.5 ? 2*t*t : -1 + (4-2*t)*t; }
-
-/* ---------- small utilities ---------- */
 function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-/* initial placeholder demo on load */
-document.addEventListener('DOMContentLoaded', ()=>{
-  seedEl.value = 'Neon samurai girl in a floating city — dramatic, bittersweet';
-  // optionally auto-generate to show UI: comment the next line if you prefer blank start
-  // generateBtn.click();
-});
+document.addEventListener('DOMContentLoaded', ()=>{ seedEl.value = 'Neon samurai girl in a floating city — dramatic, bittersweet'; });
 </script>
 </body>
 </html>
